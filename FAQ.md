@@ -147,3 +147,72 @@ git_override(
 You can commit the updated `MODULE.bazel` file to your source control every time
 you update, and if you have good automated testing, you might even consider
 automating this.
+
+## Why do I see strange behaviors when I use Abseil hash tables?
+
+Abseil's hash function uses a random seed.
+
+Many programmers believe incorrectly that this is a defense against
+[hash flooding](https://en.wikipedia.org/wiki/Collision_attack#Hash_flooding).
+While it does make a hash flooding attack more difficult, Abseil's hash function
+prioritizes speed over thorough mixing (and thus is not cryptographically
+secure), and the current seed implementation is also not cryptographically
+secure. If you are storing a large amount of attacker-controlled data, the most
+reliable defense against hash-flooding is to use a container that does not have
+`O(n)` worst-case behavior.
+
+The real reason for hash randomization is to prevent
+[Hyrum's Law](https://www.hyrumslaw.com/) dependencies on iteration order. This
+has allowed us to roll out steady improvements to the implementation without
+breaking users who may have otherwise written code that was dependent on
+ordering or other characteristics.
+
+The current implementation uses a global seed, which, if linked incorrectly
+(e.g., static Abseil in multiple DSOs), can cause the ODR violations. If more
+than one seed is linked, different calls to the hash function may return
+different values, rendering hash elements inaccessible, causing crashes, or
+other arbitrarily bad behaviors.
+
+We are often asked for a knob to disable hash randomization. The answer is a
+hard "no", even under test or under a flag, because people will find a way to
+force it and allow their code or tests to depend on it. At Google-scale, the
+compute costs that are saved by preserving the ability to improve the
+implementation far outweigh the inconvenience of learning how to write code
+resilient to change.
+
+## How do I use the LLVM Sanitizers with Abseil?
+
+LLVM Sanitizers are a suite of powerful, dynamic analysis tools that
+automatically detect various critical bugs during program execution. They work
+by instrumenting the compiled binary and linking a runtime library to intercept
+operations and report issues.
+
+We receive many incorrect bug reports from users trying to use the sanitizers.
+The most common cause of these issues is ODR violations in the form of an
+instrumentation mismatch. This happens when users try to link libraries compiled
+with sanitizer instrumentation with uninstrumented libraries. It is important
+that all code in the application is built with the same sanitizer configuration.
+
+The easiest way to do this is to use [Bazel](https://bazel.build) and pass the
+sanitizer options on the commandline, but it is important not to overlook the
+importance of avoiding precompiled system libraries, including the C++ standard
+library. For instance,
+[MemorySanitizer requires an instrumented `libc++`](https://github.com/google/sanitizers/wiki/MemorySanitizerLibcxxHowTo).
+
+Since most users are not going to build `libc++` with Bazel, here is a
+MemorySanitizer recipe that currently works (and could easily be tweaked for
+ThreadSanitizer and friends):
+
+```shell
+# From the root of the LLVM source tree, configure libc++ to be instrumented with MSAN:
+cmake -G Ninja -S runtimes -B build_msan -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="${HOME}/llvm-msan" -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DLLVM_USE_SANITIZER=MemoryWithOrigins -DLLVM_TARGETS_TO_BUILD="host"
+
+# Build and install it into ${HOME}/llvm-msan
+ninja -C build_msan install-cxx install-cxxabi install-unwind
+
+# Then build (or test) your code like this:
+bazel test --repo_env=CC=clang --repo_env=BAZEL_CXXOPTS=nostdinc++ --repo_env=BAZEL_LINKOPTS=-L${HOME}/llvm-msan/lib:-lc++:-lc++abi:-lgcc_s:-lm:-Wl,-rpath=${HOME}/llvm-msan/lib --repo_env=CPLUS_INCLUDE_PATH=${HOME}/llvm-msan/include/c++/v1 --copt=-fsanitize=memory --linkopt=-fsanitize=memory --linkopt=-fsanitize-link-c++-runtime ...
+```
+
+You should consider adding these options to a
+[`.bazelrc`](https://bazel.build/run/bazelrc) file to avoid retyping them.
