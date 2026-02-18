@@ -1766,6 +1766,34 @@ TEST_P(CordTest, ConstructFromExternalMoveOnlyReleaser) {
   EXPECT_TRUE(invoked);
 }
 
+TEST_P(CordTest, ConstructFromExternalNonConstReleaser) {
+  struct Releaser {
+    explicit Releaser(bool* invoked) : invoked(invoked) {}
+    // Non const method.
+    void operator()(absl::string_view) { *invoked = true; }
+
+    bool* invoked;
+  };
+
+  bool invoked = false;
+  (void)MaybeHardened(absl::MakeCordFromExternal("dummy", Releaser(&invoked)));
+  EXPECT_TRUE(invoked);
+}
+
+TEST_P(CordTest, ConstructFromExternalNonConstNoArgReleaser) {
+  struct Releaser {
+    explicit Releaser(bool* invoked) : invoked(invoked) {}
+    // Non const method.
+    void operator()() { *invoked = true; }
+
+    bool* invoked;
+  };
+
+  bool invoked = false;
+  (void)MaybeHardened(absl::MakeCordFromExternal("dummy", Releaser(&invoked)));
+  EXPECT_TRUE(invoked);
+}
+
 TEST_P(CordTest, ConstructFromExternalNoArgLambda) {
   bool invoked = false;
   (void)MaybeHardened(

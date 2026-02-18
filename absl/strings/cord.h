@@ -222,7 +222,7 @@ class Cord {
   // remain live until the releaser is invoked. The callable releaser also must:
   //
   //   * be move constructible
-  //   * support `void operator()(absl::string_view) const` or `void operator()`
+  //   * support `void operator()(absl::string_view)` or `void operator()()`
   //
   // Example:
   //
