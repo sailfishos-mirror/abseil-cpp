@@ -1119,6 +1119,7 @@ absl_cc_library(
     absl::config
     absl::test_instance_tracker
     GTest::gmock
+  TESTONLY
 )
 
 absl_cc_library(
