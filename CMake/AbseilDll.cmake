@@ -453,6 +453,7 @@ set(ABSL_INTERNAL_DLL_FILES
   "types/any.h"
   "types/compare.h"
   "types/optional.h"
+  "types/optional_ref.h"
   "types/span.h"
   "types/internal/span.h"
   "types/variant.h"
