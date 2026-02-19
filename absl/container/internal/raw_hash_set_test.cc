@@ -31,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <set>
@@ -53,7 +54,6 @@
 #include "absl/container/internal/container_memory.h"
 #include "absl/container/internal/hash_function_defaults.h"
 #include "absl/container/internal/hash_policy_testing.h"
-#include "absl/random/random.h"
 #include "absl/container/internal/hashtable_control_bytes.h"
 #include "absl/container/internal/hashtable_debug.h"
 #include "absl/container/internal/hashtablez_sampler.h"
@@ -68,9 +68,9 @@
 #include "absl/memory/memory.h"
 #include "absl/meta/type_traits.h"
 #include "absl/numeric/int128.h"
+#include "absl/random/random.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 
 namespace absl {
 ABSL_NAMESPACE_BEGIN
@@ -3840,7 +3840,7 @@ struct DestroyCaller {
   ~DestroyCaller() {
     if (destroy_func) (*destroy_func)();
   }
-  void Deactivate() { destroy_func = absl::nullopt; }
+  void Deactivate() { destroy_func = std::nullopt; }
 
   template <typename H>
   friend H AbslHashValue(H h, const DestroyCaller& d) {
@@ -3849,7 +3849,7 @@ struct DestroyCaller {
   bool operator==(const DestroyCaller& d) const { return val == d.val; }
 
   int val;
-  absl::optional<absl::FunctionRef<void()>> destroy_func;
+  std::optional<absl::FunctionRef<void()>> destroy_func;
 };
 
 TEST(Table, ReentrantCallsFail) {
@@ -3897,7 +3897,7 @@ TEST(Table, DestroyedCallsFail) {
 #if !defined(__clang__) && defined(__GNUC__)
   GTEST_SKIP() << "Flaky on GCC.";
 #endif
-  absl::optional<IntTable> t;
+  std::optional<IntTable> t;
   t.emplace({1});
   IntTable* t_ptr = &*t;
   EXPECT_TRUE(t_ptr->contains(1));
@@ -3925,7 +3925,7 @@ TEST(Table, DestroyedCallsFailDuringDestruction) {
   bool do_lookup = false;
 
   using Table = absl::flat_hash_map<int, std::shared_ptr<int>>;
-  absl::optional<Table> t = Table();
+  std::optional<Table> t = Table();
   Table* t_ptr = &*t;
   auto destroy = [&](int* ptr) {
     if (do_lookup) {
