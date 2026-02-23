@@ -3896,7 +3896,10 @@ TEST(Table, DestroyedCallsFail) {
   }
 #if !defined(__clang__) && defined(__GNUC__)
   GTEST_SKIP() << "Flaky on GCC.";
-#endif
+#elif defined(ABSL_HAVE_THREAD_SANITIZER)
+  GTEST_SKIP() << "Fails on TSan.";
+  // Note: we use else rather than endif here to avoid unreachable code errors.
+#else
   std::optional<IntTable> t;
   t.emplace({1});
   IntTable* t_ptr = &*t;
@@ -3907,8 +3910,10 @@ TEST(Table, DestroyedCallsFail) {
       "use-of-uninitialized-value";
 #else
       "destroyed hash table";
-#endif
+#endif  // ABSL_HAVE_MEMORY_SANITIZER
   EXPECT_DEATH_IF_SUPPORTED(t_ptr->contains(1), expected_death_message);
+
+#endif  // ABSL_HAVE_THREAD_SANITIZER
 }
 
 TEST(Table, DestroyedCallsFailDuringDestruction) {
