@@ -1582,7 +1582,7 @@ constexpr size_t MaxStorableSize() {
 // 2^sizeof(key_type) elements.
 template <size_t kSizeOfSizeT = sizeof(size_t)>
 constexpr size_t MaxValidSizeForKeySize(size_t key_size) {
-  if (key_size < kSizeOfSizeT) return uint64_t{1} << 8 * key_size;
+  if (key_size < kSizeOfSizeT) return size_t{1} << 8 * key_size;
   return (std::numeric_limits<size_t>::max)();
 }
 
