@@ -131,7 +131,7 @@ inline bool ascii_iscntrl(unsigned char c) {
 // ascii_isxdigit()
 //
 // Determines whether the given character can be represented as a hexadecimal
-// digit character (i.e. {0-9} or {A-F}).
+// digit character (i.e. {0-9} or {A-F} or {a-f}).
 inline bool ascii_isxdigit(unsigned char c) {
   return (ascii_internal::kPropertyBits[c] & 0x80) != 0;
 }
