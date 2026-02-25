@@ -56,6 +56,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [":config"],
 )
@@ -132,6 +133,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":atomic_hook",
@@ -185,6 +187,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":base_internal",
@@ -266,6 +269,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":config",
@@ -445,6 +449,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":config",
@@ -458,6 +463,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
 )
 
@@ -538,6 +544,7 @@ cc_library(
     copts = ABSL_TEST_COPTS,
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
+        "//absl:friends",
         "//absl/base:__pkg__",
     ],
     deps = [
@@ -573,6 +580,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":base",
@@ -842,6 +850,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":config",
@@ -940,6 +949,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":config",

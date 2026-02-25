@@ -1557,6 +1557,7 @@ cc_library(
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
         "//absl:__subpackages__",
+        "//absl:friends",
     ],
     deps = [
         ":str_format",
