@@ -157,6 +157,7 @@ cc_library(
     copts = ABSL_DEFAULT_COPTS,
     linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = [
+        "//absl:friends",
         "//absl/base:__pkg__",
     ],
     deps = [
