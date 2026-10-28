@@ -2429,9 +2429,12 @@ struct AddConstRefIfExpensiveToMove
                 "passed types must be unqualified");
 };
 
-template <class T, class Alloc = std::allocator<T>>
+// The dummy parameter is to delay the evaluation of the alias so that it does
+// not require the type to be complete at the point of class definition.
+template <class T, class Alloc, std::nullptr_t Dummy = nullptr>
 using PreferredMoveParamType = typename std::conditional_t<
-    type_traits_internal::IsAllocMoveSameAsCopy<T, Alloc>::value,
+    type_traits_internal::IsAllocMoveSameAsCopy<
+        T, std::enable_if_t<!static_cast<bool>(Dummy), Alloc>>::value,
     AddConstRefIfExpensiveToMove<T>, std::add_rvalue_reference<T>>::type;
 
 // A SwissTable.
@@ -2588,12 +2591,26 @@ class raw_hash_set {
   static_assert(std::is_lvalue_reference_v<reference>,
                 "Policy::element() must return a reference");
 
+  template <class T, class ParamTypeToExclude>
+  using InsertableImpl = std::conditional_t<
+      // Make sure that T isn't convertible to the preferred-qualified version
+      // of init_type itself, or otherwise we'll have ambiguous overloads.
+      std::is_convertible_v<
+          std::conditional_t<std::is_same_v<remove_cvref_t<ParamTypeToExclude>,
+                                            remove_cvref_t<T>>,
+                             T, void>,
+          ParamTypeToExclude>,
+      std::false_type,
+      std::disjunction<std::is_same<absl::remove_cvref_t<reference>,
+                                    absl::remove_cvref_t<T>>,
+                       std::is_convertible<T, init_type>>>;
   // An enabler for insert(T&&): T must be convertible to init_type or be the
   // same as [cv] value_type [ref].
   template <class T>
-  using Insertable = std::disjunction<
-      std::is_same<absl::remove_cvref_t<reference>, absl::remove_cvref_t<T>>,
-      std::is_convertible<T, init_type>>;
+  using Insertable =
+      InsertableImpl<T, PreferredMoveParamType<
+                            init_type, Alloc,
+                            (std::conditional_t<false, T, std::nullptr_t>())>>;
 
   // Bit-fields cannot be moved, and types with trivial copy and move
   // constructors should also not be moved.
@@ -3122,8 +3139,10 @@ class raw_hash_set {
   //
   //   flat_hash_map<std::string, int> s;
   //   s.insert({"abc", 42});
-  std::pair<iterator, bool> insert(PreferredMoveParamType<init_type, Alloc>
-                                       value) ABSL_ATTRIBUTE_LIFETIME_BOUND
+  template <std::nullptr_t Dummy = nullptr>
+  std::pair<iterator, bool> insert(
+      PreferredMoveParamType<init_type, Alloc, Dummy> value)
+      ABSL_ATTRIBUTE_LIFETIME_BOUND
 #if ABSL_INTERNAL_CPLUSPLUS_LANG >= 202002L
     requires(!IsLifetimeBoundAssignmentFrom<init_type>::value)
 #endif
@@ -3131,8 +3150,9 @@ class raw_hash_set {
     return emplace(std::move(value));
   }
 #if ABSL_INTERNAL_CPLUSPLUS_LANG >= 202002L
+  template <std::nullptr_t Dummy = nullptr>
   std::pair<iterator, bool> insert(
-      PreferredMoveParamType<init_type, Alloc> value
+      PreferredMoveParamType<init_type, Alloc, Dummy> value
           ABSL_INTERNAL_ATTRIBUTE_CAPTURED_BY_THIS)
       ABSL_ATTRIBUTE_LIFETIME_BOUND
     requires(IsLifetimeBoundAssignmentFrom<init_type>::value)
@@ -3167,8 +3187,9 @@ class raw_hash_set {
     return insert(value).first;
   }
 
+  template <std::nullptr_t Dummy = nullptr>
   iterator insert(const_iterator,
-                  PreferredMoveParamType<init_type, Alloc> value)
+                  PreferredMoveParamType<init_type, Alloc, Dummy> value)
       ABSL_ATTRIBUTE_LIFETIME_BOUND {
     return insert(std::move(value)).first;
   }
