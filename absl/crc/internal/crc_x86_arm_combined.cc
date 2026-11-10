@@ -584,12 +584,8 @@ class CRC32AcceleratedX86ARMCombinedMultipleStreams
                   "Invalid number of pclmul streams");
     const uint8_t* p = static_cast<const uint8_t*>(bytes);
     const uint8_t* e = p + length;
-    char* d = static_cast<char*>(dst);
     uint32_t l = *crc;
     uint64_t l64;
-    if constexpr (copy) {
-      std::memcpy(d, p, length);
-    }
 
     // A single CRC stream just runs the simple loop used to process the
     // remaining bytes after the multi-stream strategy below. Inputs shorter
@@ -672,6 +668,9 @@ class CRC32AcceleratedX86ARMCombinedMultipleStreams
     }
 
     *crc = l;
+    if constexpr (copy) {
+      std::memcpy(dst, bytes, length);
+    }
   }
 
   // Always inline when the translation unit already supports AVX (or does not
@@ -699,23 +698,69 @@ class CRC32AcceleratedX86ARMCombinedMultipleStreams
     uint64_t l64;
 
     if constexpr (copy_type != CopyType::kNone) {
-      // Align the destination pointer to a cache line. Non-temporal stores
-      // require the destination to be aligned to the store size, and aligning
-      // regular stores avoids writes that straddle two cache lines.
+      // Align the destination pointer to a 64-byte cache line. Non-temporal
+      // stores require cache-line alignment, and aligning regular stores avoids
+      // writes that straddle two cache lines.
+#if defined(__aarch64__)
+      // AArch64 has no cache-bypassing non-temporal stores or 4K aliasing, so a
+      // 64-byte over-copy safely aligns `d` while keeping the function small
+      // enough for `pclmul_v` to stay in NEON registers.
       constexpr size_t kAlignment = 64;
+      static_assert(kMediumCutoff >= kAlignment);
       uintptr_t dst_addr = reinterpret_cast<uintptr_t>(d);
       size_t bytes_to_align =
           (kAlignment - (dst_addr & (kAlignment - 1))) & (kAlignment - 1);
-      std::memcpy(d, p, bytes_to_align);
-      d += bytes_to_align;
-      while (bytes_to_align >= 8) {
-        ABSL_INTERNAL_STEP8(l, p);
-        bytes_to_align -= 8;
+      if (bytes_to_align != 0) {
+        Copy64Bytes<CopyType::kTemporal>(reinterpret_cast<uint8_t*>(d), p);
+        d += bytes_to_align;
+        while (bytes_to_align >= 8) {
+          ABSL_INTERNAL_STEP8(l, p);
+          bytes_to_align -= 8;
+        }
+        while (bytes_to_align > 0) {
+          ABSL_INTERNAL_STEP1(l, p);
+          bytes_to_align -= 1;
+        }
       }
-      while (bytes_to_align > 0) {
+#else
+      // Step `d` to cache-line alignment with naturally aligned copies so we do
+      // not straddle cache lines or write temporally into the first
+      // non-temporal cache line, loading CRC inputs before storing to avoid 4K
+      // aliasing stalls.
+      if (reinterpret_cast<uintptr_t>(d) & 1) {
         ABSL_INTERNAL_STEP1(l, p);
-        bytes_to_align -= 1;
+        *d++ = static_cast<char>(*(p - 1));
       }
+      if (reinterpret_cast<uintptr_t>(d) & 2) {
+        ABSL_INTERNAL_STEP2(l, p);
+        std::memcpy(d, p - 2, 2);
+        d += 2;
+      }
+      if (reinterpret_cast<uintptr_t>(d) & 4) {
+        ABSL_INTERNAL_STEP4(l, p);
+        std::memcpy(d, p - 4, 4);
+        d += 4;
+      }
+      if (reinterpret_cast<uintptr_t>(d) & 8) {
+        ABSL_INTERNAL_STEP8(l, p);
+        std::memcpy(d, p - 8, 8);
+        d += 8;
+      }
+      if (reinterpret_cast<uintptr_t>(d) & 16) {
+        ABSL_INTERNAL_STEP8(l, p);
+        ABSL_INTERNAL_STEP8(l, p);
+        std::memcpy(d, p - 16, 16);
+        d += 16;
+      }
+      if (reinterpret_cast<uintptr_t>(d) & 32) {
+        ABSL_INTERNAL_STEP8(l, p);
+        ABSL_INTERNAL_STEP8(l, p);
+        ABSL_INTERNAL_STEP8(l, p);
+        ABSL_INTERNAL_STEP8(l, p);
+        std::memcpy(d, p - 32, 32);
+        d += 32;
+      }
+#endif
     } else {
       // Point x at first 8-byte aligned byte in string.
       const uint8_t* x = RoundUp<8>(p);
@@ -927,15 +972,11 @@ class CRC32AcceleratedX86ARMCombinedMultipleStreams
       if constexpr (copy_type != CopyType::kNone) {
         d = reinterpret_cast<char*>(
             dst_pclmul_streams[kNumActivePclmulStreams - 1]);
-        size_t remaining_to_copy = static_cast<size_t>(e - p);
-        std::memcpy(d, p, remaining_to_copy);
       }
     } else {
       p = crc_streams[kNumActiveCrcStreams - 1];
       if constexpr (copy_type != CopyType::kNone) {
         d = reinterpret_cast<char*>(dst_crc_streams[kNumActiveCrcStreams - 1]);
-        size_t remaining_to_copy = static_cast<size_t>(e - p);
-        std::memcpy(d, p, remaining_to_copy);
       }
     }
 
@@ -963,15 +1004,26 @@ class CRC32AcceleratedX86ARMCombinedMultipleStreams
 
     *crc = l;
 
-    if constexpr (copy_type == CopyType::kNonTemporal) {
-      // According to the Intel 64 Software Developer's Manual
-      // (https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html),
-      // non-temporal stores are weakly ordered due to bypassing caches, so
-      // they have to be fenced before the copy is visible to other threads.
-      // Regular stores are ordered and need no fence. Note that the fence is
-      // placed after all stores, to avoid unnecessary serialization and a
-      // performance hit.
-      NonTemporalStoreFence();
+    if constexpr (copy_type != CopyType::kNone) {
+      const uint8_t* copy_src = e - remaining_bytes;
+      while (e - copy_src >= 64) {
+        Copy64Bytes<copy_type>(reinterpret_cast<uint8_t*>(d), copy_src);
+        d += 64;
+        copy_src += 64;
+      }
+      if constexpr (copy_type == CopyType::kNonTemporal) {
+        // According to the Intel 64 Software Developer's Manual
+        // (https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html),
+        // non-temporal stores are weakly ordered due to bypassing caches, so
+        // they have to be fenced before the copy is visible to other threads.
+        // Regular stores are ordered and need no fence. Note that the fence is
+        // placed after all non-temporal stores, and keeping the final < 64-byte
+        // regular memcpy last allows a tail call.
+        NonTemporalStoreFence();
+      }
+      if (copy_src != e) {
+        std::memcpy(d, copy_src, static_cast<size_t>(e - copy_src));
+      }
     }
   }
 
